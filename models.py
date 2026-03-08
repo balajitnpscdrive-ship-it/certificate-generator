@@ -28,7 +28,7 @@ class CollegeConfig(db.Model):
     user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, unique=True)
     
     college_name = db.Column(db.String(255), nullable=False)
-    college_logo = db.Column(db.String(500))  # File path
+    college_logo = db.Column(db.String(500))
     founder_image = db.Column(db.String(500))
     principal_signature = db.Column(db.String(500))
     secretary_signature = db.Column(db.String(500))
@@ -49,22 +49,20 @@ class Certificate(db.Model):
     student_name = db.Column(db.String(255), nullable=False, index=True)
     roll_no = db.Column(db.String(50))
     event_name = db.Column(db.String(255), nullable=False)
-    event_category = db.Column(db.String(50))  # sports, cultural, academic, other
-    position = db.Column(db.String(100))  # 1st Place, 2nd Place, Participant, etc.
-    event_date = db.Column(db.Date, nullable=False)
+    event_category = db.Column(db.String(50))
+    position = db.Column(db.String(100))
+    event_date = db.Column(db.String(50), nullable=False)
     
     college_name = db.Column(db.String(255), nullable=False)
-    certificate_file = db.Column(db.String(500))  # File path
-    qr_code = db.Column(db.String(500))  # QR code image path
+    certificate_file = db.Column(db.String(500))
+    qr_code = db.Column(db.String(500))
     
-    status = db.Column(db.String(50), default='generated')  # generated, sent, verified
+    status = db.Column(db.String(50), default='generated')
     email_sent = db.Column(db.Boolean, default=False)
     student_email = db.Column(db.String(120))
     
     generated_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     verified_at = db.Column(db.DateTime)
-    
-    metadata = db.Column(db.JSON)  # Additional data as JSON
 
 class BatchUpload(db.Model):
     """Batch upload records"""
@@ -78,7 +76,7 @@ class BatchUpload(db.Model):
     processed_records = db.Column(db.Integer, default=0)
     failed_records = db.Column(db.Integer, default=0)
     
-    status = db.Column(db.String(50), default='processing')  # processing, completed, failed
+    status = db.Column(db.String(50), default='processing')
     error_message = db.Column(db.Text)
     
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
