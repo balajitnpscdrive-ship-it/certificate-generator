@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate Generator - Home</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo">🎓 Certificate Generator</h1>
+            <ul class="nav-links">
+                {% if current_user.is_authenticated %}
+                    <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                    <li><a href="{{ url_for('upload_images') }}">Upload Images</a></li>
+                    <li><a href="{{ url_for('logout') }}">Logout</a></li>
+                {% else %}
+                    <li><a href="{{ url_for('login') }}">Login</a></li>
+                    <li><a href="{{ url_for('register') }}">Register</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </nav>
+
+    <main>
+        {% if current_user.is_authenticated %}
+            <div class="container">
+                <section class="hero">
+                    <h2>Welcome, {{ current_user.username }}!</h2>
+                    <p>Generate professional certificates for your students</p>
+                </section>
+
+                <div class="features-grid">
+                    <a href="{{ url_for('upload_images') }}" class="feature-card">
+                        <h3>📤 Upload Images</h3>
+                        <p>Upload college logo, signatures, and founder image</p>
+                    </a>
+
+                    <a href="{{ url_for('dashboard') }}" class="feature-card">
+                        <h3>📄 Generate Certificate</h3>
+                        <p>Create individual or batch certificates</p>
+                    </a>
+
+                    <a href="{{ url_for('dashboard') }}" class="feature-card">
+                        <h3>📊 Dashboard</h3>
+                        <p>View all generated certificates</p>
+                    </a>
+                </div>
+            </div>
+        {% else %}
+            <div class="hero-section">
+                <div class="container">
+                    <div class="hero-content">
+                        <h1>🎓 College Certificate Generator</h1>
+                        <p>Create professional certificates for your college events</p>
+                        <div class="hero-buttons">
+                            <a href="{{ url_for('login') }}" class="btn btn-primary">Login</a>
+                            <a href="{{ url_for('register') }}" class="btn btn-secondary">Register</a>
+                        </div>
+                    </div>
+
+                    <div class="features">
+                        <div class="feature">
+                            <h3>🖼️ Custom Images</h3>
+                            <p>Upload your college logo, founder image, and signatures</p>
+                        </div>
+                        <div class="feature">
+                            <h3>📄 Easy Generation</h3>
+                            <p>Generate certificates with just a few clicks</p>
+                        </div>
+                        <div class="feature">
+                            <h3>📦 Batch Upload</h3>
+                            <p>Generate multiple certificates from CSV file</p>
+                        </div>
+                        <div class="feature">
+                            <h3>🔲 QR Verification</h3>
+                            <p>Verify certificate authenticity with QR codes</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Certificate Generator | Made with ❤️ for educational institutions</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
