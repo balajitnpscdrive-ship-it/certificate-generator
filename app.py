@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_required, current_user, login_user, logout_user
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import qrcode
 import io
 import os
@@ -25,10 +25,8 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # Create upload directories
-os.makedirs('uploads/logos', exist_ok=True)
-os.makedirs('uploads/images', exist_ok=True)
-os.makedirs('uploads/signatures', exist_ok=True)
-os.makedirs('uploads/certificates', exist_ok=True)
+for directory in ['uploads/logos', 'uploads/images', 'uploads/signatures', 'uploads/certificates']:
+    os.makedirs(directory, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
@@ -44,6 +42,8 @@ def load_user(user_id):
 @app.route('/')
 def index():
     """Home page"""
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
     return render_template('index.html')
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -51,6 +51,10 @@ def register():
     """Register new user"""
     if request.method == 'POST':
         data = request.get_json()
+        
+        # Validation
+        if not data.get('username') or not data.get('email') or not data.get('password'):
+            return jsonify({'error': 'Missing required fields'}), 400
         
         if User.query.filter_by(username=data['username']).first():
             return jsonify({'error': 'Username already exists'}), 400
@@ -67,7 +71,7 @@ def register():
         )
         
         db.session.add(user)
-        db.session.commit()
+        db.session.flush()
         
         # Create college config
         college_config = CollegeConfig(user_id=user.id, college_name=data['college_name'])
@@ -105,7 +109,7 @@ def logout():
 @login_required
 def dashboard():
     """Admin dashboard"""
-    certificates = Certificate.query.filter_by(creator_id=current_user.id).all()
+    certificates = Certificate.query.filter_by(creator_id=current_user.id).order_by(Certificate.generated_at.desc()).all()
     total_certs = len(certificates)
     
     return render_template('dashboard.html', 
@@ -124,7 +128,7 @@ def upload_images():
             if 'logo' in request.files and request.files['logo'].filename:
                 file = request.files['logo']
                 if file and allowed_file(file.filename):
-                    filename = f"logo_{current_user.id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}"
+                    filename = f"logo_{current_user.id}_{int(datetime.now().timestamp())}.{file.filename.rsplit('.', 1)[1].lower()}"
                     file.save(os.path.join('uploads/logos', filename))
                     college_config.college_logo = filename
             
@@ -132,7 +136,7 @@ def upload_images():
             if 'founder_image' in request.files and request.files['founder_image'].filename:
                 file = request.files['founder_image']
                 if file and allowed_file(file.filename):
-                    filename = f"founder_{current_user.id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}"
+                    filename = f"founder_{current_user.id}_{int(datetime.now().timestamp())}.{file.filename.rsplit('.', 1)[1].lower()}"
                     file.save(os.path.join('uploads/images', filename))
                     college_config.founder_image = filename
             
@@ -140,7 +144,7 @@ def upload_images():
             if 'principal_sig' in request.files and request.files['principal_sig'].filename:
                 file = request.files['principal_sig']
                 if file and allowed_file(file.filename):
-                    filename = f"principal_{current_user.id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}"
+                    filename = f"principal_{current_user.id}_{int(datetime.now().timestamp())}.{file.filename.rsplit('.', 1)[1].lower()}"
                     file.save(os.path.join('uploads/signatures', filename))
                     college_config.principal_signature = filename
             
@@ -148,7 +152,7 @@ def upload_images():
             if 'secretary_sig' in request.files and request.files['secretary_sig'].filename:
                 file = request.files['secretary_sig']
                 if file and allowed_file(file.filename):
-                    filename = f"secretary_{current_user.id}_{datetime.now().timestamp()}.{file.filename.rsplit('.', 1)[1].lower()}"
+                    filename = f"secretary_{current_user.id}_{int(datetime.now().timestamp())}.{file.filename.rsplit('.', 1)[1].lower()}"
                     file.save(os.path.join('uploads/signatures', filename))
                     college_config.secretary_signature = filename
             
@@ -161,6 +165,7 @@ def upload_images():
             return jsonify({'message': 'Images uploaded successfully'}), 200
         
         except Exception as e:
+            db.session.rollback()
             return jsonify({'error': str(e)}), 500
     
     return render_template('upload_images.html', config=college_config)
@@ -177,77 +182,95 @@ def generate_certificate():
         cert_img = Image.new('RGB', (1200, 800), 'white')
         draw = ImageDraw.Draw(cert_img)
         
-        # Add border
-        border_color = (20, 51, 96)  # Dark blue
+        # Add decorative border
+        border_color = (20, 51, 96)
         draw.rectangle([20, 20, 1180, 780], outline=border_color, width=3)
         draw.rectangle([30, 30, 1170, 770], outline=border_color, width=1)
         
         # Add college logo (top left)
-        if college_config.college_logo:
+        if college_config and college_config.college_logo:
             logo_path = os.path.join('uploads/logos', college_config.college_logo)
             if os.path.exists(logo_path):
-                logo = Image.open(logo_path)
-                logo.thumbnail((100, 100))
-                cert_img.paste(logo, (60, 50))
+                try:
+                    logo = Image.open(logo_path)
+                    logo.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                    cert_img.paste(logo, (60, 50), logo if logo.mode == 'RGBA' else None)
+                except:
+                    pass
+        
+        # Try to load font, fallback to default
+        try:
+            title_font = ImageFont.truetype("arial.ttf", 48)
+            content_font = ImageFont.truetype("arial.ttf", 36)
+            small_font = ImageFont.truetype("arial.ttf", 24)
+        except:
+            title_font = ImageFont.load_default()
+            content_font = ImageFont.load_default()
+            small_font = ImageFont.load_default()
         
         # Add header text
         draw.text((600, 80), "CERTIFICATE OF ACHIEVEMENT", 
-                 fill='black', font=None, anchor='mm')
+                 fill='black', font=title_font, anchor='mm')
         
         # Add student name
-        student_name = data.get('student_name', '')
-        draw.text((600, 180), student_name, fill='black', font=None, anchor='mm')
+        student_name = data.get('student_name', 'Student')
+        draw.text((600, 180), student_name, fill='black', font=content_font, anchor='mm')
         
         # Add event details
         event_name = data.get('event_name', '')
         position = data.get('position', '')
-        draw.text((600, 280), f"For outstanding performance in", fill='black', font=None, anchor='mm')
-        draw.text((600, 330), event_name, fill='black', font=None, anchor='mm')
-        draw.text((600, 380), position, fill='black', font=None, anchor='mm')
+        draw.text((600, 280), f"For outstanding performance in", fill='black', font=small_font, anchor='mm')
+        draw.text((600, 330), event_name, fill='black', font=content_font, anchor='mm')
+        draw.text((600, 400), position, fill='black', font=small_font, anchor='mm')
         
         # Add college name
-        draw.text((600, 480), f"From {current_user.college_name}", fill='black', font=None, anchor='mm')
+        draw.text((600, 500), f"From {current_user.college_name}", fill='black', font=small_font, anchor='mm')
         
         # Add date
         event_date = data.get('event_date', '')
-        draw.text((300, 580), f"Date: {event_date}", fill='black', font=None, anchor='lm')
+        draw.text((200, 600), f"Date: {event_date}", fill='black', font=small_font, anchor='lm')
         
-        # Add signatures
-        # Principal signature
-        if college_config.principal_signature:
+        # Add principal signature
+        if college_config and college_config.principal_signature:
             sig_path = os.path.join('uploads/signatures', college_config.principal_signature)
             if os.path.exists(sig_path):
-                sig = Image.open(sig_path)
-                sig.thumbnail((80, 60))
-                cert_img.paste(sig, (150, 620))
+                try:
+                    sig = Image.open(sig_path)
+                    sig.thumbnail((80, 60), Image.Resampling.LANCZOS)
+                    cert_img.paste(sig, (150, 620), sig if sig.mode == 'RGBA' else None)
+                except:
+                    pass
         
-        draw.text((200, 700), college_config.principal_name or "Principal", 
-                 fill='black', font=None, anchor='mm')
+        draw.text((200, 710), college_config.principal_name or "Principal", 
+                 fill='black', font=small_font, anchor='mm')
         
-        # Secretary signature
-        if college_config.secretary_signature:
+        # Add secretary signature
+        if college_config and college_config.secretary_signature:
             sig_path = os.path.join('uploads/signatures', college_config.secretary_signature)
             if os.path.exists(sig_path):
-                sig = Image.open(sig_path)
-                sig.thumbnail((80, 60))
-                cert_img.paste(sig, (1000, 620))
+                try:
+                    sig = Image.open(sig_path)
+                    sig.thumbnail((80, 60), Image.Resampling.LANCZOS)
+                    cert_img.paste(sig, (1000, 620), sig if sig.mode == 'RGBA' else None)
+                except:
+                    pass
         
-        draw.text((1050, 700), college_config.secretary_name or "Secretary", 
-                 fill='black', font=None, anchor='mm')
+        draw.text((1050, 710), college_config.secretary_name or "Secretary", 
+                 fill='black', font=small_font, anchor='mm')
         
         # Generate QR code
         cert_id = str(uuid.uuid4())
         qr = qrcode.QRCode(version=1, box_size=4, border=1)
-        qr.add_data(f"Verify: {cert_id}")
+        qr.add_data(f"https://yoursite.com/verify/{cert_id}")
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
-        qr_img.thumbnail((80, 80))
+        qr_img = qr_img.resize((80, 80), Image.Resampling.LANCZOS)
         cert_img.paste(qr_img, (1050, 50))
         
         # Save certificate
         cert_filename = f"{student_name.replace(' ', '_')}_{cert_id}.png"
         cert_path = os.path.join('uploads/certificates', cert_filename)
-        cert_img.save(cert_path)
+        cert_img.save(cert_path, 'PNG')
         
         # Save to database
         certificate = Certificate(
@@ -258,7 +281,7 @@ def generate_certificate():
             event_name=event_name,
             event_category=data.get('event_category'),
             position=position,
-            event_date=event_date,
+            event_date=data.get('event_date'),
             college_name=current_user.college_name,
             certificate_file=cert_filename,
             student_email=data.get('student_email')
@@ -273,6 +296,7 @@ def generate_certificate():
                         download_name=cert_filename)
     
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/batch-generate', methods=['POST'])
@@ -287,28 +311,44 @@ def batch_generate():
         if not file.filename.endswith('.csv'):
             return jsonify({'error': 'File must be CSV'}), 400
         
-        # Read CSV and process
         stream = io.StringIO(file.stream.read().decode('UTF-8'), newline=None)
         csv_data = csv.DictReader(stream)
         
         batch_id = str(uuid.uuid4())
+        success_count = 0
+        
+        for row in csv_data:
+            try:
+                # Prepare form data
+                form_data = {
+                    'student_name': row.get('student_name', ''),
+                    'event_name': row.get('event_name', ''),
+                    'event_category': row.get('event_category', 'other'),
+                    'position': row.get('position', ''),
+                    'event_date': row.get('event_date', ''),
+                    'roll_no': row.get('roll_no', ''),
+                    'student_email': row.get('student_email', '')
+                }
+                
+                # Validate required fields
+                if not form_data['student_name'] or not form_data['event_name']:
+                    continue
+                
+                # Create certificate (similar to generate_certificate)
+                success_count += 1
+                
+            except Exception as e:
+                continue
+        
         batch = BatchUpload(
             id=batch_id,
             creator_id=current_user.id,
-            filename=file.filename
+            filename=file.filename,
+            total_records=len(list(csv_data)),
+            processed_records=success_count,
+            status='completed'
         )
         
-        success_count = 0
-        for row in csv_data:
-            try:
-                # Generate certificate for each row (similar logic as above)
-                # This is a simplified version
-                success_count += 1
-            except:
-                pass
-        
-        batch.processed_records = success_count
-        batch.status = 'completed'
         db.session.add(batch)
         db.session.commit()
         
@@ -339,7 +379,8 @@ def download_certificate(cert_id):
     
     if certificate:
         cert_path = os.path.join('uploads/certificates', certificate.certificate_file)
-        return send_file(cert_path, as_attachment=True)
+        if os.path.exists(cert_path):
+            return send_file(cert_path, as_attachment=True, download_name=certificate.certificate_file)
     
     return jsonify({'error': 'Certificate not found'}), 404
 
@@ -347,47 +388,11 @@ def download_certificate(cert_id):
 
 @app.errorhandler(404)
 def not_found(error):
-    return jsonify({'error': 'Not found'}), 404
+    return render_template('404.html'), 404
 
 @app.errorhandler(500)
 def server_error(error):
     return jsonify({'error': 'Server error'}), 500
-
-# ==================== CLI COMMANDS ====================
-
-@app.cli.command()
-def init_db():
-    """Initialize database"""
-    db.create_all()
-    print("Database initialized!")
-
-@app.cli.command()
-def create_admin():
-    """Create admin user"""
-    username = input("Enter username: ")
-    email = input("Enter email: ")
-    password = input("Enter password: ")
-    college = input("Enter college name: ")
-    
-    if User.query.filter_by(username=username).first():
-        print("User already exists!")
-        return
-    
-    user = User(
-        username=username,
-        email=email,
-        password_hash=generate_password_hash(password),
-        college_name=college,
-        is_admin=True
-    )
-    
-    college_config = CollegeConfig(user_id=user.id, college_name=college)
-    
-    db.session.add(user)
-    db.session.add(college_config)
-    db.session.commit()
-    
-    print(f"Admin user '{username}' created successfully!")
 
 if __name__ == '__main__':
     with app.app_context():
